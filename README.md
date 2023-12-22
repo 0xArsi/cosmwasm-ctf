@@ -1,4 +1,4 @@
-These are my solutions (5/10) to the Oak Security CosmWasm CTF challenges. Each solution is in the `test_exploit` function of the corresponding challenge's integration tests. All credit for developing the challenge ideas and infrastructure goes to the original creators.
+# These are my solutions (5/10) to the Oak Security CosmWasm CTF challenges. Each solution is in the `test_exploit` function of the corresponding challenge's integration tests. All credit for developing the challenge ideas and infrastructure goes to the original creators.
 
 # Oak Security CosmWasm CTF ⛳️
 
