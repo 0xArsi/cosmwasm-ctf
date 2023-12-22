@@ -47,6 +47,8 @@ pub fn execute(
 }
 
 /// Deposit entry point for user
+//@note changes state and saves it properly
+//@note this function looks fine
 pub fn deposit(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
     // validate denom
     let amount = must_pay(&info, DENOM).unwrap();
@@ -127,6 +129,7 @@ pub fn accept_owner(deps: DepsMut, info: MessageInfo) -> Result<Response, Contra
     let state = STATE.load(deps.storage)?;
 
     if state.proposed_owner != Some(info.sender.clone()) {
+        //@NOTE FUNCTION STILL PROCEEDS PAST THIS POINT
         ContractError::Unauthorized {};
     }
 
