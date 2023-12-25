@@ -1,3 +1,5 @@
+# These are my solutions (5/10) to the Oak Security CosmWasm CTF challenges. Each solution is in the `test_exploit` function of the corresponding challenge's integration tests. All credit for developing the challenge ideas and infrastructure goes to the original creators.
+
 # Oak Security CosmWasm CTF ⛳️
 
 Crack all our challenges and show the community that you know your way in security, either as an auditor or a security-minded developer! This CTF was run as a live event during AwesomWasm 2023, for info related to the event check [this other file](./awesomwasm-2023/README.md). 
