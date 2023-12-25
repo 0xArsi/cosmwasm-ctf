@@ -46,6 +46,8 @@ pub fn deposit(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractErr
     let mut user = VOTING_POWER
         .load(deps.storage, &info.sender)
         .unwrap_or_default();
+    //@note THIS CAN OVERFLOW
+    //@note but we have to have enough tokens first
     user.total_tokens += amount;
 
     VOTING_POWER
@@ -59,6 +61,11 @@ pub fn deposit(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractErr
 }
 
 /// Entry point for users to withdraw staked tokens
+/*
+@note
+•   Cannot underflow total_tokens
+•   
+*/
 pub fn withdraw(
     deps: DepsMut,
     info: MessageInfo,
@@ -91,6 +98,15 @@ pub fn withdraw(
 }
 
 /// Entry point for user to stake tokens for voting power
+/*
+@note
+•   We can take advantage of the fact that voting_power is a u128
+    instead of a Uint128, so it will overflow to a negative number 
+    without error if we add enough to it.
+
+•   This will make voting_power always less than the total amount of tokens,
+    so the user can increase the amount of tokens to way more than
+*/
 pub fn stake(
     deps: DepsMut,
     env: Env,
@@ -134,6 +150,7 @@ pub fn unstake(
         return Err(ContractError::Unauthorized {});
     }
 
+    //@note THIS CAN UNDERFLOW
     user.voting_power -= unlock_amount;
 
     VOTING_POWER

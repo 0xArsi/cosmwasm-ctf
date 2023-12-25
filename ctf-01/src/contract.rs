@@ -37,19 +37,30 @@ pub fn execute(
 }
 
 /// Deposit entry point for users
+/*
+@note
+•   There is nothing wrong w this function
+•   Also I can't use anyway because the attacket does not have funds
+*/
 pub fn deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     // check minimum amount and denom
+    //@note make sure user can't create lockup request with different denom
+    //@note also gets amount of that coin
     let amount = must_pay(&info, DENOM).unwrap();
 
+    //@note user can't submit notes with amount differing from what they withdraw
     if amount < MINIMUM_DEPOSIT_AMOUNT {
         return Err(ContractError::Unauthorized {});
     }
 
     // increment lock id
+    //@note load last lockup id
     let id = LAST_ID.load(deps.storage).unwrap_or(1);
+    //@note save the next lockup id
     LAST_ID.save(deps.storage, &(id + 1)).unwrap();
 
     // create lockup
+    //@note uses the lockup id before it was incremented
     let lock = Lockup {
         id,
         owner: info.sender,
@@ -69,6 +80,16 @@ pub fn deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, C
 }
 
 /// Withdrawal entry point for users
+/*
+@note
+•   The bug has to be here
+•   The only thing I can provide is a bunch of ids, so there needs
+    to be some way I can provide a list of ids that makes the contract
+    do something stupid
+•   I can't provide the owner's address
+•   What happens if I provide duplicate ids?
+•   You also know the order in which the IDs get updated, can you provide this
+*/
 pub fn withdraw(
     deps: DepsMut,
     env: Env,
@@ -84,8 +105,27 @@ pub fn withdraw(
         lockups.push(lockup);
     }
 
+    /*
+    @note
+    •   If the same lockup id is provided over and over in the list,
+        then multiple copies of that lockup struct will be placed in
+        lockups. removing them at the end of each iteration has no effect
+        as total_amount keeps getting increased anyway.
+    •   Even with all of this, you still can't withdraw someone else's deposit.
+        you have to make your own deposit, then withdraw it multiple times by n
+        passing in the same id over and over in the list of ids.
+    •   Crazy that I thought of this before but didn't quite understand if it worked
+        or not
+    •   Core issue is that all the lockups get loaded at once instead of checking for 
+        existence before loading / removing duplicates from input lockup ids
+    
+    •   Make a deposit with at the least the minimum amount, then supply a list containing
+        the same lock id over and over again after the lock period is over to withdraw all the 
+        funds in the protocol
+    */
     for lockup in lockups {
         // validate owner and time
+        //@note how am I supposed to get past this?
         if lockup.owner != info.sender || env.block.time < lockup.release_timestamp {
             return Err(ContractError::Unauthorized {});
         }
@@ -94,6 +134,7 @@ pub fn withdraw(
         total_amount += lockup.amount;
 
         // remove from storage
+        //@note what does this do if the id isn't there
         LOCKUPS.remove(deps.storage, lockup.id);
     }
 

@@ -48,6 +48,19 @@ pub fn execute(
 }
 
 /// Entry point when receiving CW20 tokens
+/*
+@note
+•   People vote by sending cw20 tokens to the token contract,
+    then the token sends a hook msg to this contract (that's 
+    presumably why the sender must be the token contract for 
+    vote casting messages)
+
+•   Is this frontrunnable? USER2 can wait until USER1 has proposed themselves
+    as owner and admin approves, then this contract has 100k in it. USER2 then 
+    calls resolve_proposal() so that the current proposal gets removed, then
+    USER2 calls propose() and resolve_proposal in order, which will get approved
+    as the admin's funds (majority of the supply) are already in the contract.
+*/
 pub fn receive_cw20(
     deps: DepsMut,
     env: Env,
@@ -55,10 +68,12 @@ pub fn receive_cw20(
     cw20_msg: Cw20ReceiveMsg,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
+    //@note this function will error if there is no proposal
     let current_proposal = PROPOSAL.load(deps.storage)?;
 
     match from_binary(&cw20_msg.msg) {
         Ok(Cw20HookMsg::CastVote {}) => {
+            //@note only token can cast a vote
             if config.voting_token != info.sender {
                 return Err(ContractError::Unauthorized {});
             }
@@ -76,18 +91,24 @@ pub fn receive_cw20(
                 .add_attribute("voter", cw20_msg.sender)
                 .add_attribute("power", cw20_msg.amount))
         }
+        //@note this should revert everything not silently return
+        //@note is there a msg you can send that should result in error instead of this
         _ => Ok(Response::default()),
     }
 }
 
 /// Propose a new proposal
+//@note looks fine
 pub fn propose(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    //@note does not need to unwrap error because of check immediately after
     let current_proposal = PROPOSAL.load(deps.storage);
 
+    //@note errors if there is an existing proposal
     if current_proposal.is_ok() {
         return Err(ContractError::ProposalAlreadyExists {});
     }
 
+    //@note sender cannot propose anyone other than themselves
     PROPOSAL.save(
         deps.storage,
         &Proposal {
@@ -102,6 +123,13 @@ pub fn propose(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, C
 }
 
 /// Resolve an existing proposal
+/*
+@note
+•   if voting tokens are already in the contract (not enough to pass a vote), 
+    a user with enough tokens can add enough to make a vote pass after proposing
+    themselves (removing a proposal via this method if they need to)
+
+*/
 pub fn resolve_proposal(
     deps: DepsMut,
     env: Env,
@@ -118,12 +146,15 @@ pub fn resolve_proposal(
         return Err(ContractError::ProposalNotReady {});
     }
 
+    //@note get voting token info
+    //@note code to get token info and balance is all fine
     let vtoken_info: TokenInfoResponse =
         deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
             contract_addr: config.voting_token.to_string(),
             msg: to_binary(&Cw20QueryMsg::TokenInfo {})?,
         }))?;
 
+    //@note how much voting token does this contract have?
     let balance: BalanceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
         contract_addr: config.voting_token.to_string(),
         msg: to_binary(&Cw20QueryMsg::Balance {
@@ -133,6 +164,7 @@ pub fn resolve_proposal(
 
     let mut response = Response::new().add_attribute("action", "resolve_proposal");
 
+    //@note rounding error, should use checked_ratio
     if balance.balance >= (vtoken_info.total_supply / Uint128::from(3u32)) {
         CONFIG.update(deps.storage, |mut config| -> StdResult<_> {
             config.owner = current_proposal.proposer;
@@ -148,6 +180,7 @@ pub fn resolve_proposal(
 }
 
 /// Entry point for owner to execute arbitrary Cosmos messages
+//@note cannot do anything with this
 pub fn owner_action(
     deps: DepsMut,
     info: MessageInfo,

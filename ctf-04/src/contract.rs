@@ -41,7 +41,35 @@ pub fn execute(
 }
 
 /// Entry point for users to mint shares
+/*
+@note
+•   Should verify that the user has sent coins of the right denom
+•   Should handle case where vault has zero share supply
+•   otherwise, should mint amount * current_shares/current_total_supply
+
+•   Burning/minting normally does not change the exchange rate of shares/tokens. This
+    is because the amount deposited is subtracted from the balance of the vault before 
+    the exchange rate is calculated.
+
+•   However, the contract does not keep track of the coin balance internally (via deposits)
+    so you can manipulate the balance of the vault by sending coins to the vault, which will
+    make one share worth more than one token in the burn calculation. You lose money doing this
+    so for a three-transaction sequence the profit has to take these conflicting actions into n
+    account. Namely, p would be
+    p = d1  * (d1 + d2 + t)/(d1 + d2) - t
+    p = d1 *(1 + t/(d1 + d2)) - t > 0
+    which gives
+    t < d1 / (1 - (d1/(d1+d2)))
+
+    so 
+
+    t < (d1/d2)(d1+d2)
+
+•   Note that the profitability of this exploit depends on external circumstances like the balance
+    the second user deposited, as they determine how much money you can take from the contract.
+*/
 pub fn mint(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    //@note user must have paid the right coin and denom
     let amount = must_pay(&info, DENOM).unwrap();
 
     let mut config = CONFIG.load(deps.storage).unwrap();
@@ -51,13 +79,16 @@ pub fn mint(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, Cont
         .query_balance(env.contract.address.to_string(), DENOM)
         .unwrap();
 
+    //@note use balance/supply before deposit
     let total_assets = contract_balance.amount - amount;
     let total_supply = config.total_supply;
 
     // share = asset * total supply / total assets
     let mint_amount = if total_supply.is_zero() {
+        //@note assumes that share:coin ratio is 1:1
         amount
     } else {
+        //@note after the first deposit, a share will be worth >1 coin
         amount.multiply_ratio(total_supply, total_assets)
     };
 
@@ -108,6 +139,7 @@ pub fn burn(
     }
 
     // decrease total supply
+    //@note if this does not error, then the user can withdraw any amount of shares that they want
     config.total_supply -= shares;
     CONFIG.save(deps.storage, &config)?;
 

@@ -42,28 +42,54 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
+        //@note proxy contract only
         ExecuteMsg::FlashLoan {} => flash_loan(deps, env, info),
+
+        //@note proxy contract only
         ExecuteMsg::SettleLoan {} => settle_loan(deps, env, info),
+        
+        //@note only owner
         ExecuteMsg::SetProxyAddr { proxy_addr } => set_proxy_addr(deps, info, proxy_addr),
+        
+        //@note only owner
         ExecuteMsg::WithdrawFunds { recipient } => withdraw_funds(deps, env, info, recipient),
+
+        //@note only owner
         ExecuteMsg::TransferOwner { new_owner } => transfer_owner(deps, info, new_owner),
     }
 }
 
 /// Entry point to start a flash loan by the proxy contract
+/*
+@note
+
+•   They just flash lend the entire balance to whoever calls it
+•   What should this function do?
+
+•   Should check if the caller is allowed to call this function
+•   Should check if there is already a flash loan in progress 
+•   Should check if there are any funds in the flash loan contract 
+    and throw an error otherwise
+•   send the funds and record that they have been sent
+
+•   should send the funds to the specified recipient not just info.sender
+*/
 pub fn flash_loan(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
     let mut state = FLASH_LOAN.load(deps.storage)?;
 
+    //@note if there is already a flash loan
     if state.requested_amount.is_some() {
         return Err(ContractError::OngoingFlashLoan {});
     }
 
+    //@note if the proxy has not been set 
     if config.proxy_addr.is_none() {
         return Err(ContractError::ProxyAddressNotSet {});
     }
 
+    //@note only proxy contract can call this, not a user?
     if info.sender != config.proxy_addr.unwrap() {
         return Err(ContractError::Unauthorized {});
     }
@@ -79,6 +105,7 @@ pub fn flash_loan(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response
         amount: vec![coin(balance.amount.u128(), DENOM)],
     };
 
+    //@note it does record the state after the loan is sent
     state.requested_amount = Some(balance.amount);
 
     FLASH_LOAN.save(deps.storage, &state)?;
@@ -90,6 +117,17 @@ pub fn flash_loan(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response
 }
 
 /// Entry point to settle a flash loan from the proxy contract
+/*
+@note
+
+•   What should this function do?
+
+•   Should check that there is actually a loan to settle
+•   should check that the amount received is at least the 
+    recorded amount that was lent
+•   should reset state back to none so it knows there is no
+    flash loan in progress
+*/
 pub fn settle_loan(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
@@ -192,6 +230,7 @@ pub fn transfer_owner(
     Ok(Response::new().add_attribute("action", "transfer_owner"))
 }
 
+//@note trusted only becomes true if sender = owner, proxy addr (initialized)
 pub fn is_trusted(sender: &Addr, config: &Config) -> bool {
     let mut trusted = false;
 

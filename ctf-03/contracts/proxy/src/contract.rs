@@ -46,6 +46,11 @@ pub fn execute(
 }
 
 /// Entry point for user to request flash loan
+/*
+@note
+•   Cannot flash loan money to the flash loan contract
+•   
+*/
 pub fn request_flash_loan(
     deps: DepsMut,
     env: Env,
@@ -56,6 +61,21 @@ pub fn request_flash_loan(
     let config = CONFIG.load(deps.storage)?;
 
     // Disallow calling flash loan addr
+    /*
+    @note
+    •   The function never checks if the recipient address is
+        the non-normalized version of the flash loan address,
+        it never even normalizes the input recipient address in
+        the first place.
+
+    •   If we pass the non-normalized version of the flash loan contract address,
+        we give ourselves access to all the functions only the flash loan contract is 
+        allowed to call (transfer owner, etc).
+    
+    •   We just pass the uppercase version of the flash loan contract to this function,
+        then pass the lowercase version to everything else because that's how it's stored in
+        the contract
+    */
     if recipient == config.flash_loan_addr {
         return Err(ContractError::CallToFlashLoan {});
     }
@@ -91,9 +111,11 @@ pub fn request_flash_loan(
         contract_addr: recipient.to_string(),
         msg,
         funds: vec![flash_loan_balance],
-    }));
+    })); 
 
     // 3. Settle loan
+    //@note in the callback, can I somehow get 
+    //
     msgs.push(CosmosMsg::Wasm(WasmMsg::Execute {
         contract_addr: config.flash_loan_addr.to_string(),
         msg: to_binary(&FlashLoanExecuteMsg::SettleLoan {})?,

